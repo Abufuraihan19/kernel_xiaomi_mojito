@@ -10,33 +10,33 @@ steps:
 - name: Checkout Source Kernel
 uses: actions/checkout@v4
 
-- name: Install BuildDependencies
+- name: Install Build Dependencies
 run: |
 sudo apt-get update
-sudo apt-get install -y git ccache automake flex lzop bison \
+sudo apt-get install -y gitccache automake flex lzop bison \
 gperf build-essential zip curl zlib1g-dev g++-multilib \
 libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev \
 squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool \
-make optipng bc libssl-dev rsync libncurses-dev libncurses5
+makeoptipng bc libssl-dev rsync libncurses-dev libncurses5
 
-- name:Download AOSP Clang and GCC Toolchains
+- name: Download AOSPClang and GCC Toolchains
 run: |
 mkdir -p $GITHUB_WORKSPACE/toolchain
 cd $GITHUB_WORKSPACE/toolchain
 wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/android-11.0.0_r35/clang-r383902b.tar.gz
-mkdir clang &&tar -xf clang-r383902b.tar.gz -C clang/
-gitclone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
+mkdir clang && tar -xf clang-r383902b.tar.gz -C clang/
+git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
 git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
 
 - name: Download AnyKernel3 Mojito
 run: |
 git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git $GITHUB_WORKSPACE/AnyKernel3
-sed -i 's/do.devicecheck=1/do.devicecheck=0/g' $GITHUB_WORKSPACE/AnyKernel3/anykernel.sh
+sed-i 's/do.devicecheck=1/do.devicecheck=0/g' $GITHUB_WORKSPACE/AnyKernel3/anykernel.sh
 sed -i 's/is_slot_device=0/is_slot_device=1/g' $GITHUB_WORKSPACE/AnyKernel3/anykernel.sh
 
 - name: Compile Kernel
 run: |
-exportPATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$GITHUB_WORKSPACE/toolchain/gcc64/bin:$GITHUB_WORKSPACE/toolchain/gcc32/bin:$PATH"
+export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$GITHUB_WORKSPACE/toolchain/gcc64/bin:$GITHUB_WORKSPACE/toolchain/gcc32/bin:$PATH"
 export ARCH=arm64
 export SUBARCH=arm64
 export CC=clang
@@ -44,7 +44,7 @@ export CLANG_TRIPLE=aarch64-linux-gnu-
 export CROSS_COMPILE=aarch64-linux-android-
 export CROSS_COMPILE_ARM32=arm-linux-androideabi-
 
-mkdir -p out
+mkdir-p out
 make O=out ARCH=arm64 mojito_defconfig
 make -j$(nproc --all) O=out ARCH=arm64
 
@@ -52,14 +52,14 @@ make -j$(nproc --all) O=out ARCH=arm64
 run: |
 cd $GITHUB_WORKSPACE/AnyKernel3
 if [ -f "$GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb" ]; then
-cp $GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb .
+cp$GITHUB_WORKSPACE/out/arch/arm64/boot/Image.gz-dtb .
 elif [ -f "$GITHUB_WORKSPACE/out/arch/arm64/boot/Image" ]; then
 cp $GITHUB_WORKSPACE/out/arch/arm64/boot/Image .
 fi
-find $GITHUB_WORKSPACE/out/arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} ./dtb \; 2>/dev/null|| true
+find $GITHUB_WORKSPACE/out/arch/arm64/boot/dts/ -name "*.dtb" -exec cp {} ./dtb \; 2>/dev/null || true
 zip -r9 SukiSU-Mojito-Build.zip * -x .git README.md
 
-- name: Upload Kernel Artifact
+- name: Upload KernelArtifact
 uses: actions/upload-artifact@v4
 with:
 name: SukiSU-Mojito-Flashable
