@@ -1,0 +1,44 @@
+name: Build Kernel Mojito SukiSU
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout Source Kernel
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git ccache automake flex lzop bison \
+            gperf build-essential zip curl zlib1g-dev g++-multilib \
+            libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev \
+            squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool \
+            make optipng bc libssl-dev rsync libncurses-dev libncurses5
+
+      - name: Download AOSP Clang and GCC Toolchains
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/toolchain
+          cd $GITHUB_WORKSPACE/toolchain
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/android-11.0.0_r35/clang-r383902b.tar.gz
+          mkdir clang && tar -xf clang-r383902b.tar.gz -C clang/
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
+
+      - name: Setup SukiSU-Ultra and Drivers
+        run: |
+          # Integrasi KernelSU-Next / SukiSU-Ultra jika belum ada di source
+          if [ ! -d "KernelSU" ]; then
+            curl -LSs "https://raw.githubusercontent.com/rifsxd/KernelSU-Next/next/kernel/setup.sh" | bash -s next
+          fi
+
+          # Nonaktifkan COMPAT_VDSO agar tidak terjadi error objcopy vdso32
+          sed -i 's/CONFIG_COMPAT_VDSO=y/# CONFIG_COMPAT_VDSO is not set/g' arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_COMPAT_VDSO=n" >> arch/arm64/configs/mojito_defconfig
+
+          # Aktifkan driver Ath9k HTC dan Carl9170
+          echo "CONFIG_ATH9K_HTC=m" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_CARL9170=m" >> arch/arm64/configs
