@@ -1,4 +1,3 @@
-cat << 'EOF' > compile.yml
 name: Build Kernel Mojito NetHunter SukiSU (Split Structure)
 
 on:
