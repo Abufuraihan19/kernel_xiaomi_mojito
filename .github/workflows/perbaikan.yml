@@ -1,4 +1,4 @@
-name: Build Kernel Mojito SukiSU
+name: Build Kernel Mojito NetHunter SukiSU
 
 on:
   workflow_dispatch:
@@ -7,23 +7,37 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Setup True SukiSU
+      - name: Checkout Source Kernel
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
         run: |
-          # 1. Clone source resmi SukiSU langsung ke drivers/kernelsu
+          sudo apt-get update
+          sudo apt-get install -y git ccache automake flex lzop bison \
+            gperf build-essential zip curl zlib1g-dev g++-multilib \
+            libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev \
+            squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool \
+            make optipng bc libssl-dev rsync libncurses-dev libncurses5 python3
+
+      - name: Download AOSP Clang and GCC Toolchains
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/toolchain
+          cd $GITHUB_WORKSPACE/toolchain
+          wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/android-11.0.0_r35/clang-r383902b.tar.gz
+          mkdir clang && tar -xf clang-r383902b.tar.gz -C clang/
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
+          git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
+
+      - name: Integrate SukiSU and NetHunter Config
+        run: |
+          # 1. Download Source SukiSU / KernelSU-Next
           rm -rf drivers/kernelsu
-          git clone --depth=1 https://github.com/ShirkNeko/KernelSU-Next.git drivers/kernelsu || \
-          git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git drivers/kernelsu
+          curl -LSs "https://raw.githubusercontent.com/KernelSU-Next/KernelSU-Next/next/kernel/setup.sh" | bash -
 
-          # 2. Paksa Makefile drivers memuat kernelsu
-          sed -i '/drivers\/kernelsu\//d' drivers/Makefile
-          echo "obj-\$(CONFIG_KSU) += kernelsu/" >> drivers/Makefile
+          # 2. Daftarkan folder ke Makefile drivers
+          grep -q "kernelsu" drivers/Makefile || echo "obj-\$(CONFIG_KSU) += kernelsu/" >> drivers/Makefile
 
-          # 3. Paksa Kconfig drivers memuat kernelsu
-          if ! grep -q "drivers/kernelsu/Kconfig" drivers/Kconfig; then
-            sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
-          fi
-
-          # 4. Patch Hook Syscall Manual (Wajib 4.14)
+          # 3. Syscall Hooks fs/exec.c
           if ! grep -q "ksu_handle_execve" fs/exec.c; then
             sed -i '/setup_new_exec(bprm);/a \
           #ifdef CONFIG_KSU\
@@ -32,6 +46,7 @@ jobs:
           #endif' fs/exec.c
           fi
 
+          # 4. Syscall Hooks fs/open.c
           if ! grep -q "ksu_handle_faccessat" fs/open.c; then
             sed -i '/SYSCALL_DEFINE3(faccessat/a \
           #ifdef CONFIG_KSU\
@@ -40,6 +55,7 @@ jobs:
           #endif' fs/open.c
           fi
 
+          # 5. Syscall Hooks fs/read_write.c
           if ! grep -q "ksu_handle_vfs_read" fs/read_write.c; then
             sed -i '/ssize_t vfs_read(struct file/a \
           #ifdef CONFIG_KSU\
@@ -48,5 +64,120 @@ jobs:
           #endif' fs/read_write.c
           fi
 
-          # 5. Aktifkan di mojito_defconfig
+          # 6. Set Config Defconfig
           echo "CONFIG_KSU=y" >> arch/arm64/configs/mojito_defconfig
+          sed -i 's/CONFIG_COMPAT_VDSO=y/# CONFIG_COMPAT_VDSO is not set/g' arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_COMPAT_VDSO=n" >> arch/arm64/configs/mojito_defconfig
+
+          # 7. Driver NetHunter & Wi-Fi Eksternal
+          echo "CONFIG_PACKET=y" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_NET_RAW=y" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_TUN=y" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_CFG80211=y" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_NL80211_TESTMODE=y" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_MAC80211=y" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_USB_F_HID=y" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_USB_CONFIGFS_F_HID=y" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_ATH_CARDS=m" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_ATH9K_HTC=m" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_CARL9170=m" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_RTL_CARDS=m" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_RTL8187=m" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_RT2X00=m" >> arch/arm64/configs/mojito_defconfig
+          echo "CONFIG_RT2800USB=m" >> arch/arm64/configs/mojito_defconfig
+
+      - name: Compile Kernel and Modules
+        run: |
+          export PATH="$GITHUB_WORKSPACE/toolchain/clang/bin:$GITHUB_WORKSPACE/toolchain/gcc64/bin:$GITHUB_WORKSPACE/toolchain/gcc32/bin:$PATH"
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CC=clang
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export CROSS_COMPILE=aarch64-linux-android-
+          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          export CROSS_COMPILE_COMPAT=arm-linux-androideabi-
+
+          mkdir -p out
+          make O=out ARCH=arm64 mojito_defconfig
+          make -j$(nproc --all) O=out ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            CROSS_COMPILE_COMPAT=arm-linux-androideabi-
+
+          make -j$(nproc --all) O=out ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            CROSS_COMPILE_COMPAT=arm-linux-androideabi- \
+            modules
+
+      - name: Generate DTB and dtbo
+        run: |
+          wget -q https://android.googlesource.com/platform/system/libufdt/+archive/master/utils.tar.gz
+          tar -xf utils.tar.gz
+          python3 src/mkdtboimg.py create out/arch/arm64/boot/dtbo.img --page_size=4096 $(find out/arch/arm64/boot/dts/ -name "*.dtbo") || true
+
+          mkdir -p out/dtb_final
+          find out/arch/arm64/boot/dts/qcom/ -name "*sm6150*.dtb" -o -name "*mojito*.dtb" -o -name "*sunny*.dtb" | sort | while read -r file; do
+            cat "$file" >> out/dtb_final/dtb
+          done
+
+      - name: Package AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git $GITHUB_WORKSPACE/AnyKernel3
+          cd $GITHUB_WORKSPACE/AnyKernel3
+
+          cat << 'AKEOF' > anykernel.sh
+          properties() { '
+          kernel.string=Kernel NetHunter SukiSU Mojito
+          do.devicecheck=1
+          do.modules=1
+          do.systemless=1
+          do.cleanup=1
+          do.cleanuponabort=0
+          device.name1=mojito
+          device.name2=sunny
+          supported.versions=11 - 14
+          '; }
+
+          block=/dev/block/bootdevice/by-name/boot;
+          is_slot_device=0;
+          ramdisk_compression=auto;
+          patch_vbmeta_flag=auto;
+
+          ui_print " ";
+          ui_print "Flashing Kernel NetHunter SukiSU...";
+
+          . tools/ak3-core.sh;
+
+          split_boot;
+          flash_boot;
+          flash_dtb;
+
+          if [ -f dtbo.img ]; then
+            flash_dtbo;
+          fi
+
+          ui_print "Kernel berhasil dipasang!";
+          AKEOF
+
+          # Hapus spasi di awal script anykernel
+          sed -i 's/^[ \t]*//' anykernel.sh
+
+          cp $GITHUB_WORKSPACE/out/arch/arm64/boot/Image .
+          [ -f "$GITHUB_WORKSPACE/out/arch/arm64/boot/dtbo.img" ] && cp $GITHUB_WORKSPACE/out/arch/arm64/boot/dtbo.img .
+          [ -f "$GITHUB_WORKSPACE/out/dtb_final/dtb" ] && cp $GITHUB_WORKSPACE/out/dtb_final/dtb .
+
+          mkdir -p modules/vendor/lib/modules
+          find $GITHUB_WORKSPACE/out/ -name "*.ko" -exec cp {} modules/vendor/lib/modules/ \; 2>/dev/null || true
+
+          zip -r9 NetHunter-SukiSU-Mojito.zip * -x .git README.md
+
+      - name: Upload Kernel Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NetHunter-SukiSU-Mojito
+          
