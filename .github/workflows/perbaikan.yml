@@ -10,7 +10,7 @@ jobs:
       - name: Checkout Source Kernel
         uses: actions/checkout@v4
 
-      - name: Install Build Dependencies (Super Ringan & Cepat)
+      - name: Install Build Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -52,7 +52,7 @@ jobs:
           sed -i '/kernelsu/d' drivers/Kconfig
           sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
 
-          # 3. Patch Hook Syscall Manual Presisi via Python
+          # 3. Patch Hook Syscall Manual Presisi (Format Valid KSU Legacy)
           python3 - << 'PYEOF'
           # --- 1. fs/exec.c ---
           with open("fs/exec.c", "r") as f:
@@ -61,7 +61,6 @@ jobs:
           if "ksu_handle_execveat" not in content:
               hook_decl = (
                   "\n#ifdef CONFIG_KSU\n"
-                  "extern bool ksu_execveat_hook __read_mostly;\n"
                   "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n"
                   "extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n"
                   "#endif\n"
@@ -69,10 +68,8 @@ jobs:
               hook_call = (
                   "{\n"
                   "#ifdef CONFIG_KSU\n"
-                  "\tif (unlikely(ksu_execveat_hook))\n"
-                  "\t\tksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);\n"
-                  "\telse\n"
-                  "\t\tksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);\n"
+                  "\tksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);\n"
+                  "\tksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);\n"
                   "#endif\n"
               )
               content = content.replace("static int do_execveat_common(", hook_decl + "static int do_execveat_common(")
@@ -116,15 +113,13 @@ jobs:
           if "ksu_handle_vfs_read" not in content:
               hook_decl = (
                   "\n#ifdef CONFIG_KSU\n"
-                  "extern bool ksu_vfs_read_hook __read_mostly;\n"
                   "extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr, size_t *count_ptr, loff_t **pos);\n"
                   "#endif\n"
               )
               hook_call = (
                   "\tssize_t ret;\n\n"
                   "#ifdef CONFIG_KSU\n"
-                  "\tif (unlikely(ksu_vfs_read_hook))\n"
-                  "\t\tksu_handle_vfs_read(&file, &buf, &count, &pos);\n"
+                  "\tksu_handle_vfs_read(&file, &buf, &count, &pos);\n"
                   "#endif\n"
               )
               content = content.replace("ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)\n{",
