@@ -52,20 +52,18 @@ jobs:
           grep -rl '<linux/pgtable.h>' KernelSU/ | xargs sed -i 's|<linux/pgtable.h>|<asm/pgtable.h>|g' 2>/dev/null || true
           grep -rl 'strncpy_from_user_nofault' KernelSU/ | xargs sed -i 's|strncpy_from_user_nofault|strncpy_from_user|g' 2>/dev/null || true
 
-          # FIX LSM HOOK PADA KERNEL 4.14 (Bypass lsm_hook.c karena memakai struct list_head legacy)
+          # FIX LSM HOOK PADA KERNEL 4.14 (Return type void sesuai header lsm_hook.h)
           if [ -f KernelSU/kernel/hook/lsm_hook.c ]; then
             cat << 'EOF_LSM' > KernelSU/kernel/hook/lsm_hook.c
           #include <linux/types.h>
           #include "lsm_hook.h"
 
-          int ksu_lsm_hook_init(void)
+          void ksu_lsm_hook_init(void)
           {
-          return 0;
           }
 
-          int ksu_lsm_hook_exit(void)
+          void ksu_lsm_hook_exit(void)
           {
-          return 0;
           }
           EOF_LSM
           fi
