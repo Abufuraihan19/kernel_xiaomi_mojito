@@ -42,37 +42,11 @@ jobs:
           # 1. Bersihkan modul KSU lama jika ada
           rm -rf drivers/kernelsu KernelSU KernelSU-Next
 
-          # 2. Clone KernelSU-Next resmi dan buat Symlink absolut
-          git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU
+          # 2. Clone SukiSU / KSU branch legacy yang kompatibel 100% dengan Linux 4.14
+          git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git -b legacy KernelSU 2>/dev/null || \
+          git clone --depth=1 https://github.com/tiann/KernelSU.git -b v0.9.5 KernelSU
+
           ln -sf $GITHUB_WORKSPACE/KernelSU/kernel drivers/kernelsu
-
-          # Compatibility Fix Kernel 4.14 (syscall_fn_t, pgtable.h, strncpy_from_user_nofault)
-          if [ -f KernelSU/kernel/hook/syscall_hook.h ]; then
-            sed -i '1i #include <linux/syscalls.h>\ntypedef long (*syscall_fn_t)(const struct pt_regs *);' KernelSU/kernel/hook/syscall_hook.h
-          fi
-          grep -rl '<linux/pgtable.h>' KernelSU/ | xargs sed -i 's|<linux/pgtable.h>|<asm/pgtable.h>|g' 2>/dev/null || true
-          grep -rl 'strncpy_from_user_nofault' KernelSU/ | xargs sed -i 's|strncpy_from_user_nofault|strncpy_from_user|g' 2>/dev/null || true
-
-          # Fix LSM Hook untuk Kernel 4.14 (Gunakan stub no-op bertipe void)
-          if [ -f KernelSU/kernel/hook/lsm_hook.c ]; then
-            cat << 'EOF_LSM' > KernelSU/kernel/hook/lsm_hook.c
-          #include <linux/types.h>
-          #include "lsm_hook.h"
-
-          void ksu_lsm_hook_init(void)
-          {
-          }
-
-          void ksu_lsm_hook_exit(void)
-          {
-          }
-          EOF_LSM
-          fi
-
-          # Fix patch_memory.c (__pte_to_phys & copy_to_kernel_nofault pada Kernel 4.14)
-          if [ -f KernelSU/kernel/hook/arm64/patch_memory.c ]; then
-            sed -i '1i #include <linux/uaccess.h>\n#ifndef __pte_to_phys\n#define __pte_to_phys(pte) ((phys_addr_t)pte_pfn(pte) << PAGE_SHIFT)\n#endif\n#ifndef copy_to_kernel_nofault\n#define copy_to_kernel_nofault(dst, src, size) probe_kernel_write(dst, src, size)\n#endif' KernelSU/kernel/hook/arm64/patch_memory.c
-          fi
 
           # Sambungkan ke drivers Makefile dan Kconfig
           sed -i '/kernelsu/d' drivers/Makefile
