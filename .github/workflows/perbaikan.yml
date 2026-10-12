@@ -50,7 +50,7 @@ jobs:
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU
           ln -sf $GITHUB_WORKSPACE/KernelSU/kernel drivers/kernelsu
 
-          # Compatibility Fix Kernel 4.14 (syscall_fn_t, pgtable.h, strncpy_from_user_nofault, & LSM hlist fix)
+          # Compatibility Fix Kernel 4.14 (syscall_fn_t, pgtable.h, strncpy_from_user_nofault)
           if [ -f KernelSU/kernel/hook/syscall_hook.h ]; then
             sed -i '1i #include <linux/syscalls.h>\ntypedef long (*syscall_fn_t)(const struct pt_regs *);' KernelSU/kernel/hook/syscall_hook.h
           fi
@@ -59,9 +59,20 @@ jobs:
 
           # Fix LSM Hook hlist compatibility for Kernel 4.14
           if [ -f drivers/kernelsu/hook/lsm_hook.c ]; then
-            sed -i 's/hook->list.head = head;/hook->list.head = (struct list_head *)head;/g' drivers/kernelsu/hook/lsm_hook.c
-            sed -i 's/hook->list.list.pprev = &head->first;/hook->list.prev = NULL;/g' drivers/kernelsu/hook/lsm_hook.c
-            sed -i 's/slot = (void \*\*)\&hook->list.head->first;/slot = (void \*\*)&hook->list.head;/g' drivers/kernelsu/hook/lsm_hook.c
+            python3 - << 'LSMEOF'
+            with open("drivers/kernelsu/hook/lsm_hook.c", "r") as f:
+                content = f.read()
+
+            content = content.replace("hook->list.head = head;", "hook->list.head = (struct list_head *)head;")
+            content = content.replace("hook->list.list.pprev = &head->first;", "/* pprev fix for 4.14 */")
+            content = content.replace("slot = (void **)&hook->list.head->first;", "slot = (void **)&hook->list.head;")
+            content = content.replace("slot = (void **)slot = (void **)&hook->list.head->first;hook->list.head;", "slot = (void **)&hook->list.head;")
+            content = content.replace("hook->list.prev = NULL;", "")
+
+            with open("drivers/kernelsu/hook/lsm_hook.c", "w") as f:
+                f.write(content)
+            print("LSM Hook Kernel 4.14 Berhasil Dipatch!")
+            LSMEOF
           fi
 
           # Sambungkan ke drivers Makefile dan Kconfig
@@ -305,7 +316,7 @@ jobs:
           flash_dtb;
 
           if [ -f dtbo.img ]; then
-            flash_dtb;
+            flash_dtbo;
           fi
 
           ui_print "Kernel berhasil dipasang!";
