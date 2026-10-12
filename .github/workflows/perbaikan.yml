@@ -37,11 +37,12 @@ jobs:
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU
           ln -sf $GITHUB_WORKSPACE/KernelSU/kernel drivers/kernelsu
 
-          # Compatibility Fix untuk Kernel 4.14 (syscall_fn_t & pgtable.h)
+          # Compatibility Fix Kernel 4.14 (syscall_fn_t, pgtable.h, strncpy_from_user_nofault)
           if [ -f KernelSU/kernel/hook/syscall_hook.h ]; then
             sed -i '1i #include <linux/syscalls.h>\ntypedef long (*syscall_fn_t)(const struct pt_regs *);' KernelSU/kernel/hook/syscall_hook.h
           fi
           grep -rl '<linux/pgtable.h>' KernelSU/ | xargs sed -i 's|<linux/pgtable.h>|<asm/pgtable.h>|g' 2>/dev/null || true
+          grep -rl 'strncpy_from_user_nofault' KernelSU/ | xargs sed -i 's|strncpy_from_user_nofault|strncpy_from_user|g' 2>/dev/null || true
 
           # Sambungkan ke drivers Makefile dan Kconfig
           sed -i '/kernelsu/d' drivers/Makefile
@@ -285,7 +286,7 @@ jobs:
             flash_dtbo;
           fi
 
-          ui_print "Kernel berhasil dipasang!"
+          ui_print "Kernel berhasil dipasang!";
           AKEOF
 
           sed -i 's/^[ \t]*//' anykernel.sh
