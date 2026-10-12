@@ -30,9 +30,9 @@ jobs:
 
       - name: Integrate SukiSU and NetHunter Config
         run: |
-          # 1. Bersihkan dan Clone source KSU langsung
+          # 1. Bersihkan dan Clone source KSU langsung (branch default: main)
           rm -rf drivers/kernelsu KernelSU-Next
-          git clone -b next --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git drivers/kernelsu
+          git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git drivers/kernelsu
 
           # 2. Sambungkan ke Makefile dan Kconfig drivers
           sed -i '/kernelsu/d' drivers/Makefile
@@ -140,7 +140,7 @@ jobs:
           mkdir -p out
           make O=out ARCH=arm64 mojito_defconfig
 
-          # Paksa aktifkan kembali di file target .config
+          # Paksa aktifkan kembali di target .config
           echo "CONFIG_KSU=y" >> out/.config
           echo "CONFIG_COMPAT_VDSO=n" >> out/.config
           make O=out ARCH=arm64 olddefconfig
