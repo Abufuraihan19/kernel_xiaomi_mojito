@@ -180,4 +180,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: NetHunter-SukiSU-Mojito
-          
+          path: AnyKernel3/NetHunter-SukiSU-Mojito.zip
