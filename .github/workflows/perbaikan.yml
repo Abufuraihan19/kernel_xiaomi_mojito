@@ -43,70 +43,126 @@ jobs:
           sed -i '/kernelsu/d' drivers/Kconfig
           sed -i '/endmenu/i source "drivers/kernelsu/Kconfig"' drivers/Kconfig
 
-          # 3. Patch Hook Syscall Manual Resmi (exec.c, open.c, read_write.c, stat.c)
+          # 3. Patch Hook Syscall Manual Presisi via Python
+          python3 - <<'PYEOF'
+          # --- 1. fs/exec.c ---
+          with open("fs/exec.c", "r") as f:
+              content = f.read()
 
-          # Patch fs/exec.c
-          if ! grep -q "ksu_handle_execveat" fs/exec.c; then
-            sed -i '/static int do_execveat_common/i \
-          #ifdef CONFIG_KSU\
-          extern bool ksu_execveat_hook __read_mostly;\
-          extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\
-          extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\
-          #endif' fs/exec.c
+          if "ksu_handle_execveat" not in content:
+              hook_decl = (
+                  "\n#ifdef CONFIG_KSU\n"
+                  "extern bool ksu_execveat_hook __read_mostly;\n"
+                  "extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n"
+                  "extern int ksu_handle_execveat_sucompat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags);\n"
+                  "#endif\n"
+              )
+              hook_call = (
+                  "{\n"
+                  "#ifdef CONFIG_KSU\n"
+                  "\tif (unlikely(ksu_execveat_hook))\n"
+                  "\t\tksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);\n"
+                  "\telse\n"
+                  "\t\tksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);\n"
+                  "#endif\n"
+              )
+              content = content.replace("static int do_execveat_common(", hook_decl + "static int do_execveat_common(")
+              target = "static int do_execveat_common(int fd, struct filename *filename,\n\t\t\t      struct user_arg_ptr argv,\n\t\t\t      struct user_arg_ptr envp,\n\t\t\t      int flags)\n{"
+              if target in content:
+                  content = content.replace(target, target[:-1] + hook_call)
+          with open("fs/exec.c", "w") as f:
+              f.write(content)
 
-            sed -i '/int flags)/{n;d}' fs/exec.c 2>/dev/null || true
-            sed -i '/int flags)/a \
-          {\
-          #ifdef CONFIG_KSU\
-          if (unlikely(ksu_execveat_hook))\
-            ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);\
-          else\
-            ksu_handle_execveat_sucompat(&fd, &filename, &argv, &envp, &flags);\
-          #endif' fs/exec.c
-          fi
+          # --- 2. fs/open.c ---
+          with open("fs/open.c", "r") as f:
+              content = f.read()
 
-          # Patch fs/open.c
-          if ! grep -q "ksu_handle_faccessat" fs/open.c; then
-            sed -i '/long do_faccessat(int dfd/i \
-          #ifdef CONFIG_KSU\
-          extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *flags);\
-          #endif' fs/open.c
+          if "ksu_handle_faccessat" not in content:
+              hook_decl = (
+                  "\n#ifdef CONFIG_KSU\n"
+                  "extern int ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *flags);\n"
+                  "#endif\n"
+              )
+              hook_call = (
+                  "\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n"
+                  "#ifdef CONFIG_KSU\n"
+                  "\tksu_handle_faccessat(&dfd, &filename, &mode, NULL);\n"
+                  "#endif\n"
+              )
+              content = content.replace("long do_faccessat(int dfd, const char __user *filename, int mode)\n{",
+                                        hook_decl + "long do_faccessat(int dfd, const char __user *filename, int mode)\n{")
+              idx = content.find("long do_faccessat")
+              if idx != -1:
+                  part_before = content[:idx]
+                  part_after = content[idx:]
+                  part_after = part_after.replace("\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n", hook_call, 1)
+                  content = part_before + part_after
 
-            sed -i '/unsigned int lookup_flags = LOOKUP_FOLLOW;/a \
-          #ifdef CONFIG_KSU\
-          ksu_handle_faccessat(&dfd, &filename, &mode, NULL);\
-          #endif' fs/open.c
-          fi
+          with open("fs/open.c", "w") as f:
+              f.write(content)
 
-          # Patch fs/read_write.c
-          if ! grep -q "ksu_handle_vfs_read" fs/read_write.c; then
-            sed -i '/ssize_t vfs_read(struct file/i \
-          #ifdef CONFIG_KSU\
-          extern bool ksu_vfs_read_hook __read_mostly;\
-          extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr, size_t *count_ptr, loff_t **pos);\
-          #endif' fs/read_write.c
+          # --- 3. fs/read_write.c ---
+          with open("fs/read_write.c", "r") as f:
+              content = f.read()
 
-            sed -i '/ssize_t ret;/a \
-          #ifdef CONFIG_KSU\
-          if (unlikely(ksu_vfs_read_hook))\
-            ksu_handle_vfs_read(&file, &buf, &count, &pos);\
-          #endif' fs/read_write.c
-          fi
+          if "ksu_handle_vfs_read" not in content:
+              hook_decl = (
+                  "\n#ifdef CONFIG_KSU\n"
+                  "extern bool ksu_vfs_read_hook __read_mostly;\n"
+                  "extern int ksu_handle_vfs_read(struct file **file_ptr, char __user **buf_ptr, size_t *count_ptr, loff_t **pos);\n"
+                  "#endif\n"
+              )
+              hook_call = (
+                  "\tssize_t ret;\n\n"
+                  "#ifdef CONFIG_KSU\n"
+                  "\tif (unlikely(ksu_vfs_read_hook))\n"
+                  "\t\tksu_handle_vfs_read(&file, &buf, &count, &pos);\n"
+                  "#endif\n"
+              )
+              content = content.replace("ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)\n{",
+                                        hook_decl + "ssize_t vfs_read(struct file *file, char __user *buf, size_t count, loff_t *pos)\n{")
+              idx = content.find("ssize_t vfs_read(struct file *file")
+              if idx != -1:
+                  part_before = content[:idx]
+                  part_after = content[idx:]
+                  part_after = part_after.replace("\tssize_t ret;\n", hook_call, 1)
+                  content = part_before + part_after
 
-          # Patch fs/stat.c
-          if ! grep -q "ksu_handle_stat" fs/stat.c; then
-            sed -i '/int vfs_statx(int dfd/i \
-          #ifdef CONFIG_KSU\
-          extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);\
-          #endif' fs/stat.c
+          with open("fs/read_write.c", "w") as f:
+              f.write(content)
 
-            sed -i '/unsigned int lookup_flags = LOOKUP_FOLLOW/a \
-          #ifdef CONFIG_KSU\
-          ksu_handle_stat(&dfd, &filename, &flags);\
-          #endif' fs/stat.c
-          fi
+          # --- 4. fs/stat.c ---
+          with open("fs/stat.c", "r") as f:
+              content = f.read()
 
-          # 4. Tembakkan dependensi KSU dan NetHunter ke SEMUA defconfig
+          if "ksu_handle_stat" not in content:
+              hook_decl = (
+                  "\n#ifdef CONFIG_KSU\n"
+                  "extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);\n"
+                  "#endif\n"
+              )
+              hook_call = (
+                  "\tunsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;\n\n"
+                  "#ifdef CONFIG_KSU\n"
+                  "\tksu_handle_stat(&dfd, &filename, &flags);\n"
+                  "#endif\n"
+              )
+              content = content.replace("int vfs_statx(int dfd, const char __user *filename, int flags,",
+                                        hook_decl + "int vfs_statx(int dfd, const char __user *filename, int flags,")
+              idx = content.find("int vfs_statx(int dfd")
+              if idx != -1:
+                  part_before = content[:idx]
+                  part_after = content[idx:]
+                  part_after = part_after.replace("\tunsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;\n", hook_call, 1)
+                  content = part_before + part_after
+
+          with open("fs/stat.c", "w") as f:
+              f.write(content)
+
+          print("Semua Patch Syscall KSU Berhasil Diterapkan!")
+          PYEOF
+
+          # 4. Tembakkan konfigurasi KSU dan NetHunter ke SEMUA defconfig
           find arch/arm64/configs/ -type f -name "*defconfig*" | while read -r def; do
             sed -i '/CONFIG_KSU/d' "$def"
             sed -i '/CONFIG_KPROBES/d' "$def"
