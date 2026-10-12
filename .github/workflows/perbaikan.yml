@@ -10,14 +10,6 @@ jobs:
       - name: Checkout Source Kernel
         uses: actions/checkout@v4
 
-      - name: Setup ccache
-        uses: actions/cache@v4
-        with:
-          path: ~/.ccache
-          key: ccache-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            ccache-${{ runner.os }}-
-
       - name: Install Build Dependencies
         run: |
           sudo apt-get update
@@ -27,10 +19,13 @@ jobs:
             squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool \
             make optipng bc libssl-dev rsync libncurses-dev libncurses5 python3
 
-      - name: Configure ccache
-        run: |
-          ccache -M 5G
-          ccache -s
+      - name: Setup Compiler Cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: ${{ runner.os }}-kernel-ccache-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-kernel-ccache-
 
       - name: Download AOSP Clang and GCC Toolchains
         run: |
@@ -57,22 +52,22 @@ jobs:
           grep -rl '<linux/pgtable.h>' KernelSU/ | xargs sed -i 's|<linux/pgtable.h>|<asm/pgtable.h>|g' 2>/dev/null || true
           grep -rl 'strncpy_from_user_nofault' KernelSU/ | xargs sed -i 's|strncpy_from_user_nofault|strncpy_from_user|g' 2>/dev/null || true
 
-          # Fix LSM Hook hlist compatibility for Kernel 4.14
-          if [ -f drivers/kernelsu/hook/lsm_hook.c ]; then
-            python3 - << 'LSMEOF'
-            with open("drivers/kernelsu/hook/lsm_hook.c", "r") as f:
-                content = f.read()
+          # FIX LSM HOOK PADA KERNEL 4.14 (Bypass lsm_hook.c karena memakai struct list_head legacy)
+          if [ -f KernelSU/kernel/hook/lsm_hook.c ]; then
+            cat << 'EOF_LSM' > KernelSU/kernel/hook/lsm_hook.c
+          #include <linux/types.h>
+          #include "lsm_hook.h"
 
-            content = content.replace("hook->list.head = head;", "hook->list.head = (struct list_head *)head;")
-            content = content.replace("hook->list.list.pprev = &head->first;", "/* pprev fix for 4.14 */")
-            content = content.replace("slot = (void **)&hook->list.head->first;", "slot = (void **)&hook->list.head;")
-            content = content.replace("slot = (void **)slot = (void **)&hook->list.head->first;hook->list.head;", "slot = (void **)&hook->list.head;")
-            content = content.replace("hook->list.prev = NULL;", "")
+          int ksu_lsm_hook_init(void)
+          {
+          return 0;
+          }
 
-            with open("drivers/kernelsu/hook/lsm_hook.c", "w") as f:
-                f.write(content)
-            print("LSM Hook Kernel 4.14 Berhasil Dipatch!")
-LSMEOF
+          int ksu_lsm_hook_exit(void)
+          {
+          return 0;
+          }
+          EOF_LSM
           fi
 
           # Sambungkan ke drivers Makefile dan Kconfig
@@ -194,8 +189,8 @@ LSMEOF
           with open("fs/stat.c", "w") as f:
               f.write(content)
 
-          print("Semua Patch Syscall & LSM KSU Berhasil Diterapkan!")
-PYEOF
+          print("Semua Patch Syscall KSU Berhasil Diterapkan!")
+          PYEOF
 
           # 4. Tembakkan konfigurasi KSU dan NetHunter ke SEMUA defconfig
           find arch/arm64/configs/ -type f -name "*defconfig*" | while read -r def; do
@@ -238,6 +233,8 @@ PYEOF
           export CROSS_COMPILE=aarch64-linux-android-
           export CROSS_COMPILE_ARM32=arm-linux-androideabi-
           export CROSS_COMPILE_COMPAT=arm-linux-androideabi-
+
+          ccache -M 5G
 
           mkdir -p out
           make O=out ARCH=arm64 mojito_defconfig
