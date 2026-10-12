@@ -10,14 +10,12 @@ jobs:
       - name: Checkout Source Kernel
         uses: actions/checkout@v4
 
-      - name: Install Build Dependencies
+      - name: Install Build Dependencies (Super Ringan & Cepat)
         run: |
           sudo apt-get update
-          sudo apt-get install -y git ccache automake flex lzop bison \
-            gperf build-essential zip curl zlib1g-dev g++-multilib \
-            libxml2-utils bzip2 libbz2-dev libbz2-1.0 libghc-bzlib-dev \
-            squashfs-tools pngcrush schedtool dpkg-dev liblz4-tool \
-            make optipng bc libssl-dev rsync libncurses-dev libncurses5 python3
+          sudo apt-get install -y --no-install-recommends \
+            ccache flex bison build-essential bc libssl-dev \
+            libncurses5-dev libncurses5 rsync python3 git zip curl lzop
 
       - name: Setup Compiler Cache
         uses: actions/cache@v4
@@ -42,9 +40,9 @@ jobs:
           # 1. Bersihkan modul KSU lama jika ada
           rm -rf drivers/kernelsu KernelSU KernelSU-Next
 
-          # 2. Clone SukiSU / KSU branch legacy yang kompatibel 100% dengan Linux 4.14
-          git clone --depth=1 https://github.com/rifsxd/KernelSU-Next.git -b legacy KernelSU 2>/dev/null || \
-          git clone --depth=1 https://github.com/tiann/KernelSU.git -b v0.9.5 KernelSU
+          # 2. Clone KernelSU versi legacy stabil untuk 4.14
+          git clone --depth=1 -b legacy https://github.com/tiann/KernelSU.git KernelSU 2>/dev/null || \
+          git clone --depth=1 -b v0.9.5 https://github.com/tiann/KernelSU.git KernelSU
 
           ln -sf $GITHUB_WORKSPACE/KernelSU/kernel drivers/kernelsu
 
