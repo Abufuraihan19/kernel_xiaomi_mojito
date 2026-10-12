@@ -26,6 +26,7 @@ jobs:
           key: ${{ runner.os }}-kernel-ccache-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-kernel-ccache-
+          save-always: true
 
       - name: Download AOSP Clang and GCC Toolchains
         run: |
@@ -52,7 +53,7 @@ jobs:
           grep -rl '<linux/pgtable.h>' KernelSU/ | xargs sed -i 's|<linux/pgtable.h>|<asm/pgtable.h>|g' 2>/dev/null || true
           grep -rl 'strncpy_from_user_nofault' KernelSU/ | xargs sed -i 's|strncpy_from_user_nofault|strncpy_from_user|g' 2>/dev/null || true
 
-          # FIX LSM HOOK PADA KERNEL 4.14 (Return type void sesuai header lsm_hook.h)
+          # Fix LSM Hook untuk Kernel 4.14 (Gunakan stub no-op bertipe void)
           if [ -f KernelSU/kernel/hook/lsm_hook.c ]; then
             cat << 'EOF_LSM' > KernelSU/kernel/hook/lsm_hook.c
           #include <linux/types.h>
@@ -66,6 +67,11 @@ jobs:
           {
           }
           EOF_LSM
+          fi
+
+          # Fix patch_memory.c (__pte_to_phys & copy_to_kernel_nofault pada Kernel 4.14)
+          if [ -f KernelSU/kernel/hook/arm64/patch_memory.c ]; then
+            sed -i '1i #include <linux/uaccess.h>\n#ifndef __pte_to_phys\n#define __pte_to_phys(pte) ((phys_addr_t)pte_pfn(pte) << PAGE_SHIFT)\n#endif\n#ifndef copy_to_kernel_nofault\n#define copy_to_kernel_nofault(dst, src, size) probe_kernel_write(dst, src, size)\n#endif' KernelSU/kernel/hook/arm64/patch_memory.c
           fi
 
           # Sambungkan ke drivers Makefile dan Kconfig
