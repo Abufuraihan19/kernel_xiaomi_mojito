@@ -72,7 +72,7 @@ jobs:
             with open("drivers/kernelsu/hook/lsm_hook.c", "w") as f:
                 f.write(content)
             print("LSM Hook Kernel 4.14 Berhasil Dipatch!")
-            LSMEOF
+LSMEOF
           fi
 
           # Sambungkan ke drivers Makefile dan Kconfig
@@ -195,7 +195,7 @@ jobs:
               f.write(content)
 
           print("Semua Patch Syscall & LSM KSU Berhasil Diterapkan!")
-          PYEOF
+PYEOF
 
           # 4. Tembakkan konfigurasi KSU dan NetHunter ke SEMUA defconfig
           find arch/arm64/configs/ -type f -name "*defconfig*" | while read -r def; do
