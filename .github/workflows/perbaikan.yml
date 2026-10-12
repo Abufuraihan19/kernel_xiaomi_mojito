@@ -37,10 +37,11 @@ jobs:
           git clone --depth=1 https://github.com/KernelSU-Next/KernelSU-Next.git KernelSU
           ln -sf $GITHUB_WORKSPACE/KernelSU/kernel drivers/kernelsu
 
-          # Fix syscall_fn_t untuk kernel 4.14
+          # Compatibility Fix untuk Kernel 4.14 (syscall_fn_t & pgtable.h)
           if [ -f KernelSU/kernel/hook/syscall_hook.h ]; then
             sed -i '1i #include <linux/syscalls.h>\ntypedef long (*syscall_fn_t)(const struct pt_regs *);' KernelSU/kernel/hook/syscall_hook.h
           fi
+          grep -rl '<linux/pgtable.h>' KernelSU/ | xargs sed -i 's|<linux/pgtable.h>|<asm/pgtable.h>|g' 2>/dev/null || true
 
           # Sambungkan ke drivers Makefile dan Kconfig
           sed -i '/kernelsu/d' drivers/Makefile
@@ -102,7 +103,6 @@ jobs:
                   part_after = content[idx:]
                   part_after = part_after.replace("\tunsigned int lookup_flags = LOOKUP_FOLLOW;\n", hook_call, 1)
                   content = part_before + part_after
-
           with open("fs/open.c", "w") as f:
               f.write(content)
 
@@ -132,7 +132,6 @@ jobs:
                   part_after = content[idx:]
                   part_after = part_after.replace("\tssize_t ret;\n", hook_call, 1)
                   content = part_before + part_after
-
           with open("fs/read_write.c", "w") as f:
               f.write(content)
 
@@ -160,7 +159,6 @@ jobs:
                   part_after = content[idx:]
                   part_after = part_after.replace("\tunsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;\n", hook_call, 1)
                   content = part_before + part_after
-
           with open("fs/stat.c", "w") as f:
               f.write(content)
 
@@ -287,7 +285,7 @@ jobs:
             flash_dtbo;
           fi
 
-          ui_print "Kernel berhasil dipasang!";
+          ui_print "Kernel berhasil dipasang!"
           AKEOF
 
           sed -i 's/^[ \t]*//' anykernel.sh
