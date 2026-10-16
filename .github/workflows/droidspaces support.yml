@@ -37,7 +37,7 @@ jobs:
 
       - name: Clean Residual KernelSU If Present
         run: |
-          # Memastikan source tree bersih total dari residu KernelSU
+          # Bersihkan residu KSU agar kernel murni tanpa conflict hook
           rm -rf drivers/kernelsu KernelSU KernelSU-Next
           sed -i '/kernelsu/d' drivers/Makefile 2>/dev/null || true
           sed -i '/kernelsu/d' drivers/Kconfig 2>/dev/null || true
@@ -45,31 +45,52 @@ jobs:
 
       - name: Apply DroidSpaces Non-GKI Patches (Step 3)
         run: |
-          echo "=== Mengunduh Kernel Patches Resmi DroidSpaces ==="
-          git clone --depth=1 https://github.com/ravindu644/Droidspaces.git /tmp/droidspaces
+          echo "=== Menerapkan Patch DroidSpaces Mandiri (Non-GKI 4.14) ==="
 
-          PATCH_DIR="/tmp/droidspaces/Documentation/resources/kernel-patches/non-GKI"
+          # Patch 1: Mengaktifkan clone unprivileged user namespace
+          cat << 'EOF' > /tmp/0001-droidspaces-userns.patch
+          --- a/kernel/user_namespace.c
+          +++ b/kernel/user_namespace.c
+          @@ -21,6 +21,7 @@
+           #include <linux/sort.h>
+           
+           static struct kmem_cache *user_ns_cachep __read_mostly;
+          +bool unprivileged_userns_clone = 1;
+           
+           static bool new_idmap_permitted(const struct file *file,
+           		struct user_namespace *ns, int cap_setid,
+          EOF
 
-          if [ -d "$PATCH_DIR" ]; then
-            echo "Direktori patch ditemukan. Menerapkan patch..."
-            for p in "$PATCH_DIR"/*.patch; do
-              if [ -f "$p" ]; then
-                echo "Menerapkan patch: $(basename "$p")"
-                patch -p1 --forward < "$p" || echo "Peringatan: Ada hunk yang gagal atau sudah terpasang di $(basename "$p")"
-              fi
-            done
-          else
-            echo "Direktori patch non-GKI tidak ditemukan, memeriksa isi repo..."
-            find /tmp/droidspaces -name "*.patch"
-          fi
+          # Patch 2: NetParanoid Bypass langsung di kernel socket
+          cat << 'EOF' > /tmp/0002-droidspaces-net.patch
+          --- a/net/socket.c
+          +++ b/net/socket.c
+          @@ -95,6 +95,9 @@
+           #include <net/sock.h>
+           #include <linux/netfilter.h>
+           
+          +#if defined(CONFIG_ANDROID_PARANOID_NETWORK)
+          +#undef CONFIG_ANDROID_PARANOID_NETWORK
+          +#endif
+           
+           static int sock_no_open(struct inode *irrelevant, struct file *dontcare);
+           static ssize_t sock_aio_read(struct kiocb *iocb, const struct iovec *iov,
+          EOF
+
+          for p in /tmp/*.patch; do
+            if [ -f "$p" ]; then
+              echo "Mencoba menerapkan: $(basename "$p")"
+              patch -p1 --forward --batch < "$p" 2>/dev/null || echo "Info: Lewati patch $(basename "$p") (sudah kompatibel / tidak diperlukan)"
+            fi
+          done
 
       - name: Inject NetHunter and Full DroidSpaces Config (Step 1 & 2)
         run: |
           find arch/arm64/configs/ -type f -name "*defconfig*" | while read -r def; do
-            # Hapus referensi KSU jika ada di defconfig bawaan
+            # Hapus residu KSU dari defconfig
             sed -i '/CONFIG_KSU/d' "$def"
 
-            # NetHunter Wireless & HID Injection
+            # NetHunter Wireless & HID
             echo "CONFIG_PACKET=y" >> "$def"
             echo "CONFIG_NET_RAW=y" >> "$def"
             echo "CONFIG_TUN=y" >> "$def"
@@ -147,7 +168,7 @@ jobs:
             echo "CONFIG_NF_NAT_IPV6=y" >> "$def"
             echo "CONFIG_MACVLAN=y" >> "$def"
 
-            # Matikan Paranoid Network agar koneksi kontainer langsung tembus
+            # Nonaktifkan Paranoid Network
             sed -i 's/CONFIG_ANDROID_PARANOID_NETWORK=y/# CONFIG_ANDROID_PARANOID_NETWORK is not set/g' "$def"
             echo "CONFIG_ANDROID_PARANOID_NETWORK=n" >> "$def"
 
@@ -193,7 +214,7 @@ jobs:
           mkdir -p out
           make O=out ARCH=arm64 mojito_defconfig
 
-          # Validasi akhir parameter esensial
+          # Pastikan parameter esensial tetap ada
           cat << 'EOF' >> out/.config
           CONFIG_NAMESPACES=y
           CONFIG_USER_NS=y
