@@ -90,6 +90,10 @@ jobs:
             # Hapus residu KSU dari defconfig
             sed -i '/CONFIG_KSU/d' "$def"
 
+            # Matikan VDSO 32-bit compat (Solusi permanen error objcopy)
+            sed -i 's/CONFIG_COMPAT_VDSO=y/# CONFIG_COMPAT_VDSO is not set/g' "$def"
+            echo "CONFIG_COMPAT_VDSO=n" >> "$def"
+
             # NetHunter Wireless & HID
             echo "CONFIG_PACKET=y" >> "$def"
             echo "CONFIG_NET_RAW=y" >> "$def"
@@ -214,8 +218,10 @@ jobs:
           mkdir -p out
           make O=out ARCH=arm64 mojito_defconfig
 
-          # Pastikan parameter esensial tetap ada
+          # Paksa matikan VDSO 32 secara mutlak dan pastikan config DroidSpaces aktif
+          sed -i 's/CONFIG_COMPAT_VDSO=y/# CONFIG_COMPAT_VDSO is not set/g' out/.config
           cat << 'EOF' >> out/.config
+          CONFIG_COMPAT_VDSO=n
           CONFIG_NAMESPACES=y
           CONFIG_USER_NS=y
           CONFIG_PID_NS=y
